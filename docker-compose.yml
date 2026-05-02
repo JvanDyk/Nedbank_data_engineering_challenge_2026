@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nedbank-de-submission:latest
+    container_name: nedbank-pipeline-test
+    # No networks — matches scoring system constraint
+    network_mode: none
+    # Security: read-only filesystem except tmpfs and output
+    read_only: true
+    tmpfs:
+      - /tmp:rw,size=512m
+    volumes:
+      - ../stage1/data/input:/data/input:ro
+      - ./data/output:/data/output:rw
+      - ./config:/data/config:ro
+    # Resource constraints: match scoring system (2 vCPU, 2 GB)
+    mem_limit: 2g
+    memswap_limit: 2g
+    cpus: '2'
+    # Logging
+    environment:
+      - PYTHONUNBUFFERED=1
+    # No interactive terminal
+    stdin_open: false
+    tty: false

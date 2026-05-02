@@ -1,0 +1,110 @@
+# Silver Layer Schema & Transformations
+# Defines field transformations and type conversions from Bronze to Silver
+# inherits all columns from base_schema, applies transformations
+
+transformations:
+  accounts:
+    field_mappings:
+      # All fields pass through except those with type conversions
+      account_id: "account_id"
+      customer_ref: "customer_ref"
+      account_type: "account_type"
+      account_status: "account_status"
+      open_date:
+        source: "open_date"
+        target_type: "date"
+        parser: "parse_date"
+      product_tier: "product_tier"
+      mobile_number: "mobile_number"
+      digital_channel: "digital_channel"
+      credit_limit:
+        source: "credit_limit"
+        target_type: "decimal(18,2)"
+      current_balance:
+        source: "current_balance"
+        target_type: "decimal(18,2)"
+      last_activity_date:
+        source: "last_activity_date"
+        target_type: "date"
+        parser: "parse_date"
+      ingestion_timestamp: "ingestion_timestamp"
+
+    deduplication:
+      key_col: "account_id"
+      strategy: "dropDuplicates"
+
+    null_handling:
+      exclude_null_pk: true
+      pk_column: "account_id"
+
+  customers:
+    field_mappings:
+      customer_id: "customer_id"
+      id_number: "id_number"
+      first_name: "first_name"
+      last_name: "last_name"
+      dob:
+        source: "dob"
+        target_type: "date"
+        parser: "parse_date"
+      gender: "gender"
+      province: "province"
+      income_band: "income_band"
+      segment: "segment"
+      risk_score:
+        source: "risk_score"
+        target_type: "integer"
+      kyc_status: "kyc_status"
+      product_flags: "product_flags"
+      ingestion_timestamp: "ingestion_timestamp"
+
+    deduplication:
+      key_col: "customer_id"
+      strategy: "dropDuplicates"
+
+    null_handling:
+      exclude_null_pk: false
+
+  transactions:
+    field_mappings:
+      transaction_id: "transaction_id"
+      account_id: "account_id"
+      transaction_date:
+        source: "transaction_date"
+        target_type: "date"
+        parser: "parse_date"
+      transaction_time: "transaction_time"
+      transaction_type: "transaction_type"
+      merchant_category: "merchant_category"
+      merchant_subcategory: "merchant_subcategory"
+      amount:
+        source: "amount"
+        target_type: "decimal(18,2)"
+      currency:
+        source: "currency"
+        target_type: "string"
+        normalizer: "normalize_currency"
+      channel: "channel"
+      location: "location"
+      dq_flag:
+        computed: true
+        type: "string"
+        description: "Data quality flag (Stage 1: null for clean data)"
+      ingestion_timestamp: "ingestion_timestamp"
+
+    deduplication:
+      key_col: "transaction_id"
+      strategy: "dropDuplicates"
+
+    null_handling:
+      exclude_null_pk: false
+
+# Parser definitions (Stage 1 only)
+parsers:
+  parse_date:
+    formats:
+      - "yyyy-MM-dd"
+    fallback: null
+
+  normalize_currency:
+    stage_1_canonical: "ZAR"

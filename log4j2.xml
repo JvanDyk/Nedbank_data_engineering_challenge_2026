@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="error" packages="org.apache.spark.log4j2">
+  <Appenders>
+    <Console name="console" target="SYSTEM_ERR">
+      <PatternLayout pattern="%d{yy/MM/dd HH:mm:ss} %p %c{1}: %m%n" />
+    </Console>
+  </Appenders>
+  <Loggers>
+    <Logger name="org.apache.logging.log4j.core.util.NetUtils" level="off" />
+    <Logger name="org.apache.spark.util.MacAddressUtil" level="off" />
+    <Logger name="org.apache.hadoop.util.NativeCodeLoader" level="off" />
+    <Root level="warn">
+      <AppenderRef ref="console" />
+    </Root>
+  </Loggers>
+</Configuration>

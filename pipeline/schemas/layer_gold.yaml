@@ -1,0 +1,110 @@
+# Gold Layer Schema & Transformations
+# Defines dimensional model tables and their field mappings from Silver
+
+tables:
+  dim_customers:
+    type: "dimension"
+    source_table: "customers"
+    description: "Customer dimension with computed fields"
+    surrogate_key: "customer_sk"
+    surrogate_key_source: "customer_id"
+    field_mappings:
+      customer_sk:
+        computed: true
+        type: "bigint"
+        algorithm: "sha2_256_60bit"
+        source: "customer_id"
+      customer_id: "customer_id"
+      gender: "gender"
+      province: "province"
+      income_band: "income_band"
+      segment: "segment"
+      risk_score: "risk_score"
+      kyc_status: "kyc_status"
+      age_band:
+        computed: true
+        type: "string"
+        algorithm: "age_band_from_dob"
+        source: "dob"
+        age_ranges:
+          - { min: 18, max: 25, label: "18-25" }
+          - { min: 26, max: 35, label: "26-35" }
+          - { min: 36, max: 45, label: "36-45" }
+          - { min: 46, max: 55, label: "46-55" }
+          - { min: 56, max: 65, label: "56-65" }
+          - { min: 65, max: null, label: "65+" }
+
+  dim_accounts:
+    type: "dimension"
+    source_table: "accounts"
+    description: "Account dimension"
+    surrogate_key: "account_sk"
+    surrogate_key_source: "account_id"
+    field_mappings:
+      account_sk:
+        computed: true
+        type: "bigint"
+        algorithm: "sha2_256_60bit"
+        source: "account_id"
+      account_id: "account_id"
+      customer_id:
+        source: "customer_ref"
+      account_type: "account_type"
+      account_status: "account_status"
+      open_date: "open_date"
+      product_tier: "product_tier"
+      digital_channel: "digital_channel"
+      credit_limit: "credit_limit"
+      current_balance: "current_balance"
+      last_activity_date: "last_activity_date"
+
+  fact_transactions:
+    type: "fact"
+    source_table: "transactions"
+    description: "Transaction fact table with dimension keys"
+    joins:
+      - target_table: "dim_accounts"
+        join_type: "inner"
+        join_keys:
+          - { fact: "account_id", dim: "account_id" }
+        select_from_dim: ["account_sk"]
+      - target_table: "dim_customers"
+        join_type: "inner"
+        join_keys:
+          - { fact: "customer_sk", dim: "customer_sk" }
+        select_from_dim: ["customer_sk"]
+
+    surrogate_key: "transaction_sk"
+    surrogate_key_source: "transaction_id"
+
+    filters:
+      # Exclude ORPHANED_ACCOUNT records (no matching account in Silver)
+      - { column: "dq_flag", condition: "is_null_or_not_equal", value: "ORPHANED_ACCOUNT" }
+
+    field_mappings:
+      transaction_sk:
+        computed: true
+        type: "bigint"
+        algorithm: "sha2_256_60bit"
+        source: "transaction_id"
+      transaction_id: "transaction_id"
+      account_sk:
+        join_source: "dim_accounts"
+      customer_sk:
+        join_source: "dim_customers"
+      transaction_date: "transaction_date"
+      transaction_timestamp:
+        computed: true
+        type: "timestamp"
+        algorithm: "concat_date_time"
+        sources: ["transaction_date", "transaction_time"]
+      transaction_type: "transaction_type"
+      merchant_category: "merchant_category"
+      merchant_subcategory: "merchant_subcategory"
+      amount: "amount"
+      currency: "currency"
+      channel: "channel"
+      province:
+        source: "location.province"
+      dq_flag: "dq_flag"
+      ingestion_timestamp: "ingestion_timestamp"

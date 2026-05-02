@@ -1,0 +1,191 @@
+# Base Schema Registry
+# Single source of truth for all data sources across Bronze, Silver, Gold layers.
+# Structure: table_name → columns with type, nullable, transformations
+
+tables:
+  accounts:
+    description: "Virtual account master records from fintech"
+    primary_key: "account_id"
+    source_format: "csv"
+    columns:
+      account_id:
+        type: "string"
+        nullable: true
+        description: "Account identifier"
+      customer_ref:
+        type: "string"
+        nullable: true
+        description: "Reference to customer_id in customers table"
+      account_type:
+        type: "string"
+        nullable: true
+        description: "Type of account (e.g., SAVINGS, CURRENT)"
+      account_status:
+        type: "string"
+        nullable: true
+        description: "Account status (e.g., ACTIVE, CLOSED)"
+      open_date:
+        type: "string"
+        nullable: true
+        description: "Account open date (raw format in Bronze, parsed in Silver)"
+      product_tier:
+        type: "string"
+        nullable: true
+        description: "Product tier classification"
+      mobile_number:
+        type: "string"
+        nullable: true
+        description: "Mobile number associated with account"
+      digital_channel:
+        type: "string"
+        nullable: true
+        description: "Digital channel used"
+      credit_limit:
+        type: "string"
+        nullable: true
+        description: "Credit limit (raw string in Bronze, Decimal(18,2) in Silver/Gold)"
+      current_balance:
+        type: "string"
+        nullable: true
+        description: "Current balance (raw string in Bronze, Decimal(18,2) in Silver/Gold)"
+      last_activity_date:
+        type: "string"
+        nullable: true
+        description: "Last activity date (raw format in Bronze, parsed in Silver)"
+
+  customers:
+    description: "Customer master records from bank on-prem system"
+    primary_key: "customer_id"
+    source_format: "csv"
+    columns:
+      customer_id:
+        type: "string"
+        nullable: true
+        description: "Customer identifier"
+      id_number:
+        type: "string"
+        nullable: true
+        description: "National ID or passport number"
+      first_name:
+        type: "string"
+        nullable: true
+        description: "First name"
+      last_name:
+        type: "string"
+        nullable: true
+        description: "Last name"
+      dob:
+        type: "string"
+        nullable: true
+        description: "Date of birth (raw format in Bronze, parsed in Silver)"
+      gender:
+        type: "string"
+        nullable: true
+        description: "Gender"
+      province:
+        type: "string"
+        nullable: true
+        description: "Province of residence"
+      income_band:
+        type: "string"
+        nullable: true
+        description: "Income band classification"
+      segment:
+        type: "string"
+        nullable: true
+        description: "Customer segment"
+      risk_score:
+        type: "string"
+        nullable: true
+        description: "Risk score (raw string in Bronze, Integer in Silver/Gold)"
+      kyc_status:
+        type: "string"
+        nullable: true
+        description: "KYC (Know Your Customer) status"
+      product_flags:
+        type: "string"
+        nullable: true
+        description: "Product eligibility flags"
+
+  transactions:
+    description: "Transaction events from fintech"
+    primary_key: "transaction_id"
+    source_format: "jsonl"
+    columns:
+      transaction_id:
+        type: "string"
+        nullable: true
+        description: "Unique transaction identifier"
+      account_id:
+        type: "string"
+        nullable: true
+        description: "Account this transaction belongs to"
+      transaction_date:
+        type: "string"
+        nullable: true
+        description: "Transaction date (raw format in Bronze, parsed in Silver)"
+      transaction_time:
+        type: "string"
+        nullable: true
+        description: "Transaction time (HH:mm:ss format)"
+      transaction_type:
+        type: "string"
+        nullable: true
+        description: "Type of transaction (e.g., DEBIT, CREDIT)"
+      merchant_category:
+        type: "string"
+        nullable: true
+        description: "Merchant category code"
+      merchant_subcategory:
+        type: "string"
+        nullable: true
+        description: "Merchant subcategory (Stage 2 field, nullable in Stage 1)"
+      amount:
+        type: "string"
+        nullable: true
+        description: "Transaction amount (raw string in Bronze, Decimal(18,2) in Silver/Gold)"
+      currency:
+        type: "string"
+        nullable: true
+        description: "Currency code (normalized to ZAR in Silver/Gold)"
+      channel:
+        type: "string"
+        nullable: true
+        description: "Channel through which transaction was made"
+      location:
+        type: "struct"
+        nullable: true
+        description: "Transaction location metadata"
+        fields:
+          province:
+            type: "string"
+            nullable: true
+            description: "Province where transaction occurred"
+          city:
+            type: "string"
+            nullable: true
+            description: "City where transaction occurred"
+          coordinates:
+            type: "string"
+            nullable: true
+            description: "Geographic coordinates"
+      metadata:
+        type: "struct"
+        nullable: true
+        description: "Transaction metadata"
+        fields:
+          device_id:
+            type: "string"
+            nullable: true
+            description: "Device identifier"
+          session_id:
+            type: "string"
+            nullable: true
+            description: "Session identifier"
+          retry_flag:
+            type: "boolean"
+            nullable: true
+            description: "Whether this is a retry attempt"
+
+# Layer-specific transformations defined in layer config files
+# (layer_silver.yaml, layer_gold.yaml)

@@ -1,0 +1,11 @@
+# Runtime output (mounted by scoring system at runtime)
+output/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+
+# Editor metadata
+.DS_Store
+*.swp

@@ -1,0 +1,10 @@
+# Exclude runtime output from the image context
+output/
+
+# Ignore VCS and local metadata
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
