@@ -104,6 +104,9 @@ parsers:
   parse_date:
     formats:
       - "yyyy-MM-dd"
+      - "yyyy-MM-dd HH:mm:ss"
+      - "dd/MM/yyyy"
+      - "unix_epoch"
     fallback: null
 
   normalize_currency:

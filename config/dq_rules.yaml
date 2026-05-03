@@ -1,0 +1,142 @@
+# Data Quality Rules Configuration
+# Pipeline reads DQ logic from here — not hardcoded in Python.
+# handling_action values here MUST match values written to dq_report.json exactly.
+# The scoring harness cross-references both files for consistency.
+# issue_type values here MUST match the issue_type fields in dq_report.json.
+
+deduplication:
+  transactions:
+    key: transaction_id
+    strategy: keep_first_by_ingestion_timestamp
+    issue_type: duplicate_transactions
+    flag_code: DUPLICATE_DEDUPED
+    handling_action: DEDUPLICATED_KEEP_FIRST
+    description: >
+      Duplicate transaction events with the same transaction_id are deduplicated
+      using Window.row_number() ordered by ingestion_timestamp ASC. The earliest
+      record is retained; all subsequent copies are excluded from Silver and Gold.
+
+referential_integrity:
+  transactions:
+    - field: account_id
+      references: accounts.account_id
+      issue_type: orphaned_transactions
+      flag_code: ORPHANED_ACCOUNT
+      handling_action: QUARANTINED
+      description: >
+        Transactions whose account_id has no matching record in the Silver accounts
+        table are excluded from Silver and Gold. Detected via left join against
+        Silver accounts with null indicator on the right side.
+
+type_checks:
+  transactions:
+    amount:
+      expected_type: decimal
+      issue_type: amount_type_mismatch
+      flag_code: TYPE_MISMATCH
+      handling_action: CAST_TO_DECIMAL
+      description: >
+        The amount field is declared StringType in Bronze to preserve stage-2 records
+        where the fintech delivers amount as a quoted JSON string. Silver casts to
+        DECIMAL(18,2). All string-typed amounts in this dataset are valid decimals
+        so no cast failures occur. Post-parse detection of string vs numeric origin
+        is not possible with a StringType Bronze schema.
+
+date_format_checks:
+  fields:
+    - transaction_date
+    - open_date
+    - last_activity_date
+    - dob
+  expected_format: "yyyy-MM-dd"
+  accepted_variants:
+    - "dd/MM/yyyy"
+    - unix_epoch_integer
+    - "yyyy-MM-dd HH:mm:ss"
+  issue_type: date_format_inconsistency
+  flag_code: DATE_FORMAT
+  handling_action: NORMALISED_DATE
+  description: >
+    Date fields may arrive in yyyy-MM-dd (standard), dd/MM/yyyy (variant), or
+    as Unix epoch integer strings (variant). Non-standard formats are parsed and
+    normalised to yyyy-MM-dd. Records with non-standard dates retain their
+    normalised value and are flagged DATE_FORMAT in fact_transactions.dq_flag.
+
+currency_normalisation:
+  target_value: ZAR
+  variants: ["R", "rands", "710", "zar"]
+  issue_type: currency_variants
+  flag_code: CURRENCY_VARIANT
+  handling_action: NORMALISED_CURRENCY
+  description: >
+    Currency field variants (R, rands, zar lowercase, 710 ISO 4217 numeric) are
+    normalised to canonical "ZAR". Records with non-standard currency are retained
+    with the normalised value and flagged CURRENCY_VARIANT in fact_transactions.dq_flag.
+
+null_checks:
+  accounts:
+    fields:
+      - account_id
+    issue_type: null_account_id
+    flag_code: NULL_REQUIRED
+    handling_action: EXCLUDED_NULL_PK
+    description: >
+      Account records with a null account_id primary key cannot be loaded — they
+      have no valid identifier. These records are excluded from Silver and Gold
+      and counted in the DQ report.
+  transactions:
+    fields:
+      - transaction_id
+      - account_id
+      - transaction_date
+      - amount
+      - transaction_type
+      - currency
+      - channel
+    issue_type: null_required_field
+    flag_code: NULL_REQUIRED
+    handling_action: QUARANTINED
+    description: >
+      Transaction records missing any non-nullable required field are flagged
+      NULL_REQUIRED in fact_transactions.dq_flag and excluded from Gold aggregations.
+
+# ── Report generation manifest ────────────────────────────────────────────────
+# Drives the dq_report.json dq_issues array. Order here = order in the report.
+# count_keys: dot-paths into the dq_summary dict produced by run_transformation.
+# records_in_output_count: true → records_in_output equals records_affected (normalised/cast).
+#                          false → records excluded (0 in output).
+# Adding a new issue type that has a count_key already wired in transform.py
+# requires only a new entry here — no Python code change needed.
+report_issues:
+  - issue_type: DUPLICATE_DEDUPED
+    handling_action: DEDUPLICATED_KEEP_FIRST
+    count_keys: ["transactions.dup_count"]
+    records_in_output_count: false
+
+  - issue_type: ORPHANED_ACCOUNT
+    handling_action: QUARANTINED
+    count_keys: ["transactions.orphan_count"]
+    records_in_output_count: false
+
+  - issue_type: TYPE_MISMATCH
+    handling_action: CAST_TO_DECIMAL
+    count_keys: ["transactions.type_mismatch_count"]
+    records_in_output_count: true
+
+  - issue_type: DATE_FORMAT
+    handling_action: NORMALISED_DATE
+    count_keys:
+      - "transactions.non_iso_date_count"
+      - "accounts.non_iso_date_count"
+      - "customers.non_iso_date_count"
+    records_in_output_count: true
+
+  - issue_type: CURRENCY_VARIANT
+    handling_action: NORMALISED_CURRENCY
+    count_keys: ["transactions.currency_variant_count"]
+    records_in_output_count: true
+
+  - issue_type: NULL_REQUIRED
+    handling_action: EXCLUDED_NULL_PK
+    count_keys: ["accounts.null_pk_count"]
+    records_in_output_count: false

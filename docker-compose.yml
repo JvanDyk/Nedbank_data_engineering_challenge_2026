@@ -14,7 +14,7 @@ services:
     tmpfs:
       - /tmp:rw,size=512m
     volumes:
-      - ../stage1/data/input:/data/input:ro
+      - ./data/input:/data/input:ro
       - ./data/output:/data/output:rw
       - ./config:/data/config:ro
     # Resource constraints: match scoring system (2 vCPU, 2 GB)

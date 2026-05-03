@@ -143,8 +143,16 @@ class SchemaRegistry:
             raise ValueError(f"Table '{table_name}' not found in base_schema.yaml")
         return base_tables[table_name].get("columns", {})
 
+    def table_names(self) -> list:
+        """Return all table names declared in base_schema.yaml (ordered as defined)."""
+        return list(self.base_schema.get("tables", {}).keys())
 
-def _parse_spark_type(type_str: str) -> type:
+    def source_format(self, table_name: str) -> str:
+        """Return source format ('csv' or 'jsonl') as declared in base_schema.yaml."""
+        return self.base_schema["tables"][table_name].get("source_format", "csv")
+
+
+def parse_spark_type(type_str: str) -> type:
     """Convert type string to Spark type."""
     type_str = type_str.lower().strip()
 
@@ -188,4 +196,4 @@ def build_silver_select_expr(field_mappings: Dict, parser_defs: Dict = None) -> 
     return result
 
 
-__all__ = ["SchemaRegistry", "build_silver_select_expr"]
+__all__ = ["SchemaRegistry", "build_silver_select_expr", "parse_spark_type"]

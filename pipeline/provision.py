@@ -29,10 +29,16 @@ def _sk(df: DataFrame, key_col: str, sk_col: str) -> DataFrame:
     )
 
 
-def _build_dim_customers(df: DataFrame, schema_registry: SchemaRegistry) -> DataFrame:
-    """Build customer dimension from Silver customers, with computed fields from schema."""
-    table_def = schema_registry.get_gold_table_def("dim_customers")
+def _build_dim(df: DataFrame, gold_table_name: str, schema_registry: SchemaRegistry) -> DataFrame:
+    """Build a dimension table from Silver table using layer_gold.yaml field mappings.
+
+    Handles surrogate key generation and computed columns (e.g. age_band_from_dob).
+    """
+    table_def = schema_registry.get_gold_table_def(gold_table_name)
     field_mappings = table_def.get("field_mappings", {})
+
+    sk_source = table_def.get("surrogate_key_source")
+    df = _sk(df, sk_source, table_def.get("surrogate_key"))
 
     today = date.today()
     age_expr = F.floor(F.datediff(F.lit(today), F.col("dob")) / 365.25)
@@ -46,41 +52,15 @@ def _build_dim_customers(df: DataFrame, schema_registry: SchemaRegistry) -> Data
         .otherwise(None)
     )
 
-    sk_source = table_def.get("surrogate_key_source", "customer_id")
-    df = _sk(df, sk_source, table_def.get("surrogate_key", "customer_sk"))
-
     select_exprs = []
     for target_col, mapping in field_mappings.items():
         if isinstance(mapping, str):
             select_exprs.append(F.col(mapping).alias(target_col))
         elif isinstance(mapping, dict):
             if mapping.get("computed"):
-                if target_col in df.columns:
-                    select_exprs.append(F.col(target_col).alias(target_col))
-                elif mapping.get("algorithm") == "age_band_from_dob":
+                if mapping.get("algorithm") == "age_band_from_dob":
                     select_exprs.append(age_band_expr.alias(target_col))
-            else:
-                source = mapping.get("source", target_col)
-                select_exprs.append(F.col(source).alias(target_col))
-
-    return df.select(*select_exprs)
-
-
-def _build_dim_accounts(df: DataFrame, schema_registry: SchemaRegistry) -> DataFrame:
-    """Build account dimension from Silver accounts."""
-    table_def = schema_registry.get_gold_table_def("dim_accounts")
-    field_mappings = table_def.get("field_mappings", {})
-
-    sk_source = table_def.get("surrogate_key_source", "account_id")
-    df = _sk(df, sk_source, table_def.get("surrogate_key", "account_sk"))
-
-    select_exprs = []
-    for target_col, mapping in field_mappings.items():
-        if isinstance(mapping, str):
-            select_exprs.append(F.col(mapping).alias(target_col))
-        elif isinstance(mapping, dict):
-            if mapping.get("computed"):
-                if target_col in df.columns:
+                elif target_col in df.columns:
                     select_exprs.append(F.col(target_col).alias(target_col))
             else:
                 source = mapping.get("source", target_col)
@@ -177,8 +157,8 @@ def run_provisioning(
     t0 = time.time()
 
     t = time.time()
-    dim_customers = _build_dim_customers(silver_dfs["customers"], schema_registry).cache()
-    dim_accounts  = _build_dim_accounts(silver_dfs["accounts"], schema_registry).cache()
+    dim_customers = _build_dim(silver_dfs["customers"], "dim_customers", schema_registry).cache()
+    dim_accounts  = _build_dim(silver_dfs["accounts"], "dim_accounts", schema_registry).cache()
     print(f"  build dims: {time.time() - t:.1f}s", flush=True)
 
     from concurrent.futures import ThreadPoolExecutor

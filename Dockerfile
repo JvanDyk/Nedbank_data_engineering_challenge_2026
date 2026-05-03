@@ -1,6 +1,10 @@
 FROM nedbank-de-challenge/base:1.0
 
 WORKDIR /app
+
+# Install system utilities required by Spark and compression libraries
+RUN apt-get update && apt-get install -y procps libzstd1 && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -12,8 +16,7 @@ COPY pipeline/ pipeline/
 COPY config/ config/
 
 ENV PYTHONPATH=/app
-# The base image sets SPARK_HOME to dist-packages (wrong for pip installs).
-# Override to the correct site-packages path.
+# Base image SPARK_HOME points to dist-packages (incorrect for pip). Override to site-packages.
 ENV SPARK_HOME=/usr/local/lib/python3.11/site-packages/pyspark
 # Scoring system runs --network=none; prevent Spark JVM from calling DNS
 ENV SPARK_LOCAL_IP=127.0.0.1

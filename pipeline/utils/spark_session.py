@@ -30,9 +30,9 @@ def get_spark_session(config: dict = None) -> SparkSession:
     master = spark_conf.get("master", "local[2]")
     app_name = spark_conf.get("app_name", "nedbank-de-pipeline")
 
-    # Snappy JNI extraction needs /data/output (volume-mounted, persistent).
-    # Derby metastore and java.io.tmpdir use /tmp (tmpfs, 512MB, writable).
-    # This split avoids tmpfs-to-shared-object mapping issues on some Docker hosts.
+    # Shuffle and JNI libs go to /data/output (host volume, no size cap).
+    # java.io.tmpdir and Derby stay on /tmp (tmpfs) — they're tiny.
+    # Stage 2: 3M-row Window.row_number() shuffle overflows 512MB /tmp if kept there.
     _jvm_tmp = (
         "-Djava.io.tmpdir=/tmp "
         "-Dorg.xerial.snappy.tempdir=/data/output "
@@ -56,7 +56,7 @@ def get_spark_session(config: dict = None) -> SparkSession:
         # ── Filesystem (read-only container safety) ─────────────────────────
         # Spark shuffle, warehouse, and metastore all need writable dirs.
         # /tmp is the only guaranteed writable tmpfs at session-create time.
-        .config("spark.local.dir", "/tmp")
+        .config("spark.local.dir", "/data/output/spark-tmp")
         .config("spark.sql.warehouse.dir", "/tmp/spark-warehouse")
 
         # ── Memory ──────────────────────────────────────────────────────────
@@ -85,6 +85,9 @@ def get_spark_session(config: dict = None) -> SparkSession:
         .config("spark.kryo.unsafe", "true")
 
         # ── I/O ─────────────────────────────────────────────────────────────
+        # snappy: Pure Java, no JNI native library issues in containerized environment.
+        # (zstd offers 20-30% better compression but requires JNI libs that have
+        # compatibility issues across different container base images)
         .config("spark.sql.parquet.compression.codec", "snappy")
         .config("spark.driver.extraJavaOptions", _jvm_tmp)
         .config("spark.executor.extraJavaOptions", _jvm_tmp)
@@ -95,6 +98,8 @@ def get_spark_session(config: dict = None) -> SparkSession:
         # ── Misc ────────────────────────────────────────────────────────────
         .config("spark.ui.enabled", "false")
         .config("spark.sql.session.timeZone", "UTC")
+        # CORRECTED: return null for unparseable date strings instead of throwing
+        .config("spark.sql.legacy.timeParserPolicy", "CORRECTED")
         .config("spark.sql.broadcastTimeout", "120")
     )
 
