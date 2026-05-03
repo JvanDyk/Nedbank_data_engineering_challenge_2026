@@ -10,5 +10,13 @@
 # Do NOT re-pin these packages here — version conflicts will break your build.
 # Only add packages that are genuinely not in the base image.
 #
-# Example:
-#   great-expectations==0.18.0
+# Stage 3 streaming uses orjson for fast JSONL parsing (≈3× stdlib json).
+orjson==3.10.7
+
+# numpy ABI fix. The base image ships numpy 2.4.4 alongside pyarrow 14.0.0,
+# which was compiled against the numpy 1.x C API. Without this pin pyarrow.lib
+# fails to import (`AttributeError: _ARRAY_API not found`), Arrow-based
+# Python↔JVM transfer falls back to slow row-by-row pickling, and a noisy
+# traceback prints on every Spark createDataFrame. numpy 1.26 is the last
+# 1.x release and is ABI-compatible with the base image's pyarrow.
+numpy<2

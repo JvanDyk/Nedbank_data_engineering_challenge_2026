@@ -1,123 +1,77 @@
-# Nedbank DE Pipeline — Release-1
+# Nedbank DE Pipeline — Release-2
 
-**Stage:** 1 (Bronze → Silver → Gold medallion architecture)  
-**Performance:** ~52–60s (2 vCPU / 2 GB container)  
-**AI Disclosure:** Leveraged AI chat for coding 
-
-**Stage:** 2 (Bronze → Silver → Gold medallion architecture)  
-**Performance:** Stage 2: 176.2s (2 vCPU / 2 GB container)  
-**AI Disclosure:** Leveraged AI chat for coding 
+Stage: 1/2/3 (Bronze → Silver → Gold + Streaming)  
+Performance: ~88s batch + ~250s streaming (2 vCPU / 2 GB container)  
+AI Disclosure: Leveraged AI chat for coding
 
 ---
 
-## Overview
-
-Medallion architecture medallion pipeline ingesting three sources (accounts CSV, customers CSV, transactions JSONL) → dimensions + facts for BI/reporting.
-
-**Three layers:**
-
-| Layer | Purpose | Output |
-|-------|---------|--------|
-| **Bronze** | Raw ingest + timestamp | Delta tables, unmodified |
-| **Silver** | Type standardization + DQ | Typed, deduplicated, flagged |
-| **Gold** | Dimensional model | dim_customers, dim_accounts, fact_transactions |
-
----
-
-## Repository Structure
-
-```
-Root/
-├── Dockerfile                  # Must extend nedbank-de-challenge/base:1.0
-├── requirements.txt            # Python dependencies beyond base image
-├── pipeline/
-│   ├── __init__.py
-│   ├── run_all.py             # Entry point: orchestrates Bronze → Silver → Gold
-│   ├── ingest.py              # Bronze layer ingestion
-│   ├── transform.py           # Bronze → Silver transformation
-│   ├── provision.py           # Silver → Gold dimensional model
-│   ├── schemas/
-│   │   ├── base_schema.yaml   # Base schema definitions
-│   │   ├── layer_silver.yaml  # Silver layer schema
-│   │   └── layer_gold.yaml    # Gold layer schema
-│   └── utils/
-│       ├── __init__.py
-│       ├── spark_session.py   # Shared SparkSession factory
-│       ├── dq_rules.py        # DQ verification
-│       └── schema_loader.py   # Schema loading
-├── config/
-│   ├── pipeline_config.yaml   # I/O paths, Spark settings
-│   └── dq_rules.yaml          # DQ handling rules
-├── jars/
-│   ├── delta-spark_2.12-3.1.0.jar
-│   └── delta-storage-3.1.0.jar
-└── README.md                  # This file
-```
-
-
-## Execution & Development
+## How to Execute
 
 ### Prerequisites
 
-1. **Docker** — Installed and running
-2. **Base image** — `nedbank-de-challenge/base:1.0` must be pre-built:
-   ```bash
-   docker build -t nedbank-de-challenge/base:1.0 -f ../stage1/infrastructure/Dockerfile.base ../stage1/infrastructure/
-   ```
-3. **Test data** — Located at `../stage1/data/input/` (symlinked or copied locally)
+- Docker installed and running
+- Test data from stage1/data/input and stage3_delta/data/stream
 
-### Docker CLI (Matches scoring system exactly)
+### Build
 
-**Setup:**
 ```bash
-# Create local test data structure
-mkdir -p /tmp/test-data/input /tmp/test-data/output /tmp/test-data/config
-
-# Copy test data (adjust paths for your OS)
-# Linux/Mac:
-cp ../stage1/data/input/* /tmp/test-data/input/
-cp config/pipeline_config.yaml /tmp/test-data/config/
-
-# Windows (PowerShell):
-Copy-Item "../stage1/data/input/*" "/tmp/test-data/input/" -Recurse
-Copy-Item "config/pipeline_config.yaml" "/tmp/test-data/config/"
+cd "e:\GITHUB\SYMMETRICAL CELLULAR AUTOMATA\Nedbank\temp_challenge0.1\Release-2"
+docker build -t nedbank-de-release2:latest .
 ```
 
-**Build:**
-```bash
-docker build -t nedbank-de-submission:latest .
+### Setup Data (PowerShell)
+
+```powershell
+cd "e:\GITHUB\SYMMETRICAL CELLULAR AUTOMATA\Nedbank\temp_challenge0.1\Release-2"
+
+@("input","output","stream","config") | % { mkdir "data\$_" -Force > $null }
+
+$batch_src="e:\GITHUB\SYMMETRICAL CELLULAR AUTOMATA\Nedbank\temp_challenge0.1\stage1\data\input"
+Get-ChildItem "$batch_src" -File | Copy-Item -Destination "data\input\" -Force
+
+$stream_src="e:\GITHUB\SYMMETRICAL CELLULAR AUTOMATA\Nedbank\temp_challenge0.1\stage3_delta\data\stream"
+Get-ChildItem "$stream_src" -File | Copy-Item -Destination "data\stream\" -Force
+
+Copy-Item "config\pipeline_config.yaml","config\dq_rules.yaml" "data\config\" -Force
 ```
 
-**Run (local testing):**
+### Setup Data (Bash)
+
+```bash
+cd "/e/GITHUB/SYMMETRICAL CELLULAR AUTOMATA/Nedbank/temp_challenge0.1/Release-2"
+
+mkdir -p data/{input,output,stream,config}
+
+cp "/e/GITHUB/SYMMETRICAL CELLULAR AUTOMATA/Nedbank/temp_challenge0.1/stage1/data/input"/* data/input/
+cp "/e/GITHUB/SYMMETRICAL CELLULAR AUTOMATA/Nedbank/temp_challenge0.1/stage3_delta/data/stream"/* data/stream/
+cp config/*.yaml data/config/
+```
+
+### Run
+
 ```bash
 docker run --rm \
-  --memory=2g --cpus=2 \
-  -v /tmp/test-data/input:/data/input \
-  -v /tmp/test-data/output:/data/output \
-  -v /tmp/test-data/config:/data/config \
-  nedbank-de-submission:latest
-```
-
-**Run (matches scoring system exactly):**
-```bash
-docker run --rm \
-  --network=none \
-  --memory=2g --memory-swap=2g \
-  --cpus=2 \
-  --read-only \
+  --memory=2g --memory-swap=2g --cpus=2 \
   --tmpfs /tmp:rw,size=512m \
-  -v /tmp/test-data:/data \
-  nedbank-de-submission:latest
+  -v "$(pwd)/data:/data" \
+  nedbank-de-release2:latest
 ```
 
-**Verify exit code:**
+### Verify
+
 ```bash
-echo $?  # Should print 0
+# Check exit code (should be 0)
+echo $?
+
+# Check outputs
+ls data/output/bronze/
+ls data/output/silver/
+ls data/output/gold/
+ls data/output/stream_gold/
+
+# Check stream processing
+cat data/output/stream_state.json
 ```
 
-**Verify outputs exist:**
-```bash
-ls /tmp/test-data/output/bronze/
-ls /tmp/test-data/output/silver/
-ls /tmp/test-data/output/gold/
-```
+Expected output: Pipeline runs batch (Bronze → Silver → Gold → DQ report), then processes 12 streaming JSONL files into current_balances and recent_transactions tables. Exit code 0.

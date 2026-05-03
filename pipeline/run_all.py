@@ -1,8 +1,19 @@
 """
-Pipeline Entry Point: Orchestrate Bronze → Silver → Gold sequence.
+Pipeline entry point — orchestrates medallion layers in sequence.
 
-Single SparkSession: created once, passed through all stages.
-Exit code: 0 (success) / non-zero (failure) — required by scoring system.
+Invoked by scoring system:
+  docker run ... python pipeline/run_all.py
+
+Single SparkSession and config created once, passed through all stages.
+DataFrames (Bronze/Silver Delta readers) are passed between stages so each
+stage shares the same session without rebuilding it.
+
+Stage 1/2: generates /data/output/dq_report.json after all batch layers complete.
+Stage 3: runs streaming polling loop after batch completes. Polls
+  /data/stream/ for JSONL micro-batch files, merges into two new Gold
+  tables (stream_gold/current_balances, stream_gold/recent_transactions).
+
+Exits 0 on success, non-zero on failure.
 """
 
 import json
@@ -16,6 +27,7 @@ from pipeline.utils.dq_rules import DQRules
 from pipeline.ingest import run_ingestion
 from pipeline.transform import run_transformation
 from pipeline.provision import run_provisioning
+from pipeline.stream_ingest import run_stream_ingestion
 
 
 def _p(msg: str) -> None:
@@ -73,39 +85,53 @@ def _write_dq_report(config: dict, dq_summary: dict, elapsed: float, dq_rules: D
 
 if __name__ == "__main__":
     total_start = time.time()
+    run_ts = datetime.now(timezone.utc)
     try:
         config = load_config()
         spark = get_spark_session(config)
         dq_rules = DQRules.from_config(config)
 
         _p("=" * 60)
-        _p("NEDBANK DE PIPELINE — Stage 1")
+        _p("NEDBANK DE PIPELINE — Stage 1/2/3")
         _p("=" * 60)
 
         t = time.time()
-        _p("\n[1/3] Bronze layer — ingesting raw data...")
+        _p("\n[1/4] Bronze layer — ingesting raw data...")
         bronze_dfs = run_ingestion(spark, config)
         _p(f"      Bronze done in {time.time() - t:.1f}s")
 
         t = time.time()
-        _p("\n[2/3] Silver layer — transforming and cleaning...")
+        _p("\n[2/4] Silver layer — transforming and cleaning...")
         silver_dfs, dq_summary = run_transformation(spark, config, bronze_dfs, dq_rules)
         _p(f"      Silver done in {time.time() - t:.1f}s")
 
         t = time.time()
-        _p("\n[3/3] Gold layer — building dimensional model...")
-        run_provisioning(spark, config, silver_dfs)
+        _p("\n[3/4] Gold layer — building dimensional model...")
+        gold_counts = run_provisioning(spark, config, silver_dfs)
         _p(f"      Gold done in {time.time() - t:.1f}s")
 
-        elapsed = time.time() - total_start
-        _write_dq_report(config, dq_summary, elapsed, dq_rules)
+        batch_elapsed = time.time() - total_start
+
+        _p("\n[+] Writing DQ report...")
+        _write_dq_report(config, dq_summary, batch_elapsed, dq_rules)
+
+        # Check if streaming config is present for Stage 3
+        if "streaming" in config:
+            # Free batch caches so streaming loop has available memory
+            spark.catalog.clearCache()
+
+            _p("\n[4/4] Streaming layer — polling /data/stream/ ...")
+            run_stream_ingestion(spark=spark, config=config, silver_accounts_df=silver_dfs["accounts"])
 
         _p(f"\n{'=' * 60}")
-        _p(f"PIPELINE COMPLETE — {elapsed:.1f}s total")
+        total_elapsed = time.time() - total_start
+        _p(f"PIPELINE COMPLETE — {total_elapsed:.1f}s total")
         _p(f"{'=' * 60}")
         sys.exit(0)
 
     except Exception as e:
         elapsed = time.time() - total_start
         print(f"\n[FATAL] Pipeline failed after {elapsed:.1f}s: {e}", file=sys.stderr, flush=True)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
         sys.exit(1)
